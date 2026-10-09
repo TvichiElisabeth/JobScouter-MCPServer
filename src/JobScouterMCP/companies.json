@@ -4,5 +4,14 @@
   {"name": "Showpad", "source": "greenhouse", "board": "showpad"},
   {"name": "Telnyx", "source": "greenhouse", "board": "telnyx54"},
   {"name": "Hootsuite", "source": "greenhouse", "board": "hootsuite"},
-  {"name": "Sportygroup", "source": "greenhouse", "board": "sportygroup"}
+  
+  {"name": "Emagine", "source": "ashby", "board": "emagine"},
+  {"name": "UIPath", "source": "ashby", "board": "uipath"},
+  {"name": "OpenAI", "source": "ashby", "board": "openai"},
+  {"name": "Alchemy", "source": "ashby", "board": "alchemy"},
+
+  {"name": "Aleph", "source": "lever", "board": "aleph"},
+  {"name": "TSMG", "source": "lever", "board": "tsmg"},
+  {"name": "Caseware", "source": "lever", "board": "caseware"},
+  {"name": "ShieldAI", "source": "lever", "board": "shieldai"}
 ]

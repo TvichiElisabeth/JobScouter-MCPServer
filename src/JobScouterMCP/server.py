@@ -5,7 +5,7 @@ from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
-from JobScouterMCP.sources import Job, fetch_greenhouse
+from JobScouterMCP.sources import Job, fetch_company
 
 log = logging.getLogger("JobScouterMCP")
 
@@ -17,18 +17,20 @@ mcp = MCPServer("JobScouterMCP")
 
 async def all_jobs() -> list[Job]:
     """Fetch jobs from every tracked company at the same time. Boards that fail are skipped."""
-    greenhouse = [c for c in COMPANIES if c["source"] == "greenhouse"]
     results = await asyncio.gather(
-        *(fetch_greenhouse(c["name"], c["board"]) for c in greenhouse),
+        *(fetch_company(c) for c in COMPANIES),
         return_exceptions=True,
     )
     jobs: list[Job] = []
-    for company, result in zip(greenhouse, results):
+    ok = 0
+    for company, result in zip(COMPANIES, results):
         if isinstance(result, Exception):
-            log.warning("skipping %s: %s", company["name"], result)
+            log.warning("skipping %s (%s): %r", company["name"], company["source"], result)
         else:
+            log.info("%s (%s): %d jobs", company["name"], company["source"], len(result))
             jobs.extend(result)
-    log.info("fetched %d jobs from %d companies", len(jobs), len(greenhouse))
+            ok += 1
+    log.info("fetched %d jobs from %d of %d companies", len(jobs), ok, len(COMPANIES))
     return jobs
 
 

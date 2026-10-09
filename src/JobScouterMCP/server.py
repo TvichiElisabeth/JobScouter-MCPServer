@@ -14,11 +14,13 @@ COMPANIES = json.loads(COMPANIES_FILE.read_text(encoding="utf-8"))
 
 mcp = MCPServer("JobScouterMCP")
 
+FETCH_DEADLINE = 8  # seconds; a company slower than this is skipped for this search
 
 async def all_jobs() -> list[Job]:
-    """Fetch jobs from every tracked company at the same time. Boards that fail are skipped."""
+    """Fetch jobs from every tracked company at the same time. Boards that fail
+    or take longer than FETCH_DEADLINE seconds are skipped."""
     results = await asyncio.gather(
-        *(fetch_company(c) for c in COMPANIES),
+        *(asyncio.wait_for(fetch_company(c), timeout=FETCH_DEADLINE) for c in COMPANIES),
         return_exceptions=True,
     )
     jobs: list[Job] = []

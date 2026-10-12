@@ -50,7 +50,7 @@ Greenhouse has two IDs: `id` (public, appears in the job URL) and `internal_job_
 -Our lookup table is small. If Ashby says “Moldova” and Moldova isn’t in our table, we can’t convert it, so the job ends up with no country.
 -The text check only knows the cities we list. If a Greenhouse job just says “Cluj” and “Cluj” isn’t on our list, we miss it.
 -Some jobs have no single country. “Remote, EU” could be anywhere in Europe, so there’s no one code to give it.
-
+-- The Ashby lookup only covers the countries listed in it; any other country name becomes `""` and relies on the text fallback. Measured on OpenAI (811 jobs): the first version of the table missed "South Korea" (8 jobs) and "Brazil" (4 jobs); after adding them, 808 of 811 jobs (99.6%) have a country. The remaining 3 have no country in the data at all.
 ---
 
 ## workplace
@@ -82,7 +82,14 @@ Greenhouse has two IDs: `id` (public, appears in the job URL) and `internal_job_
 **Known limitations:**
 - Greenhouse only has workplace data when the company defines a "Location Type" custom field, so many Greenhouse jobs will be `""`.
 - When Ashby's `workplaceType` is `null` and `isRemote` is `false`, the job could be onsite or hybrid, so it stays `""`.
-- Lever's `remote` value comes from Lever's documentation and hasn't been seen in the sampled data yet.
+- Completeness differs a lot by source (measured 12 Oct 2026):
+
+  | Source | Jobs | hybrid | onsite | remote | unknown |
+  |---|---|---|---|---|---|
+  | Lever (Aleph) | 112 | 97 | 12 | 3 | 0 (0%) |
+  | Ashby (OpenAI) | 811 | 506 | 28 | 20 | 257 (32%) |
+
+  About a third of OpenAI's jobs have neither `workplaceType` nor `isRemote: true`. Because unknown jobs are never guessed, a "remote only" filter can hide up to a third of OpenAI's jobs.
 
 ---
 
@@ -116,6 +123,8 @@ Greenhouse has two IDs: `id` (public, appears in the job URL) and `internal_job_
 - "posted" does not mean exactly the same thing in each ATS. Lever's `createdAt` is when the posting was created in Lever, which can be before it went public. Ashby's `publishedAt` may reset if a job is republished.
 - Converting to UTC can shift the date by one day: a job posted at 23:00 in New York on the 20th is stored as the 21st. That's acceptable for "last N days" filters, and the rule is the same for every source.
 
+
+- Measured completeness: 0 missing dates in Lever (Aleph, 112 jobs) and Ashby (OpenAI, 811 jobs).
 ---
 
 ## employment type (later)

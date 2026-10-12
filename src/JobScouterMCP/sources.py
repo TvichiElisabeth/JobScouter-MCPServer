@@ -1,5 +1,5 @@
 from typing import TypedDict
-
+from datetime import datetime, timezone
 import httpx
 
 
@@ -10,6 +10,9 @@ class Job(TypedDict):
     title: str
     location: str
     url: str
+    posted: str      # "YYYY-MM-DD" in UTC, or "" if unknown
+    workplace: str   # "onsite", "hybrid", "remote", or "" if unknown
+    country: str     # ISO 3166-1 alpha-2 code like "RO", or "" if unknown
 
 async def _get_json(url: str):
     """Download a URL and return its parsed JSON. Raises on HTTP errors (404, 500...)."""
@@ -17,9 +20,61 @@ async def _get_json(url: str):
         resp = await client.get(url, timeout=15)
         resp.raise_for_status()
         return resp.json()
-
     
- # Greenhouse Normalizer + Fetcher---------------------------
+# PostedDate Normalizer-------------------------------------------------
+def to_utc_date(value) -> str:
+    """Convert an ISO 8601 string (Greenhouse, Ashby) or a Unix timestamp in
+    milliseconds (Lever) to "YYYY-MM-DD" in UTC. Returns "" if missing or unreadable."""
+    if value is None or value == "":
+        return ""
+    try:
+        if isinstance(value, (int, float)):
+            dt = datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+        else:
+            dt = datetime.fromisoformat(value)
+            if dt.tzinfo is None:            # no offset given: assume UTC
+                dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).date().isoformat()
+    except (ValueError, TypeError, OverflowError, OSError):
+        return ""
+
+# Workplace Normalizer-------------------------------------------------
+WORKPLACES = {"onsite", "hybrid", "remote"}
+
+def normalize_workplace(value) -> str:
+    """Map any spelling of a workplace type ("On-Site", "OnSite", "Hybrid", "remote")
+    to "onsite", "hybrid" or "remote". Returns "" for missing or unrecognised values."""
+    if not isinstance(value, str):
+        return ""
+    key = value.lower().replace("-", "").replace(" ", "").replace("_", "")
+    return key if key in WORKPLACES else ""
+
+# Country Normalizer-------------------------------------------------
+# Country name -> ISO 3166-1 alpha-2 code. Keys are lowercase.
+# Covers Europe (the project's focus) plus common hiring countries; extend as needed.
+COUNTRY_CODES = {
+    "romania": "RO", "moldova": "MD", "bulgaria": "BG", "hungary": "HU",
+    "poland": "PL", "czechia": "CZ", "czech republic": "CZ", "slovakia": "SK",
+    "austria": "AT", "germany": "DE", "switzerland": "CH",
+    "netherlands": "NL", "the netherlands": "NL", "belgium": "BE",
+    "france": "FR", "spain": "ES", "portugal": "PT", "italy": "IT", "greece": "GR",
+    "ireland": "IE", "united kingdom": "GB", "uk": "GB", "great britain": "GB",
+    "denmark": "DK", "sweden": "SE", "norway": "NO", "finland": "FI",
+    "estonia": "EE", "latvia": "LV", "lithuania": "LT",
+    "croatia": "HR", "serbia": "RS", "ukraine": "UA",
+    "united states": "US", "united states of america": "US", "usa": "US",
+    "canada": "CA", "israel": "IL", "united arab emirates": "AE",
+    "india": "IN", "singapore": "SG", "japan": "JP", "australia": "AU",
+}
+
+def country_code(name) -> str:
+    """Convert a country name ("Poland", "Czech Republic") to its ISO code ("PL", "CZ").
+    Returns "" for missing or unknown names."""
+    if not isinstance(name, str):
+        return ""
+    return COUNTRY_CODES.get(name.strip().lower(), "")
+    
+# Greenhouse Normalizer + Fetcher---------------------------
 def normalize_greenhouse(company: str, data: dict) -> list[Job]:
     """Convert Greenhouse's JSON format into our Job format."""
     jobs = []

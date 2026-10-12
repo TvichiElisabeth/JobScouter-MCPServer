@@ -4,7 +4,7 @@ JobScouterMCP reads open jobs from three applicant tracking systems (ATS): **Gre
 
 This document records, field by field, what each ATS actually returns, what JobScouterMCP stores, and why.
 
-**How the findings were gathered:** one raw job per ATS was inspected field by field (Greenhouse: `anthropic`, Lever: `aleph`, Ashby: `emagine` and `openai`), and the results were compared side by side. Observations based on a single example are marked as such.
+**How the findings were gathered:** one raw job per ATS was inspected field by field (Greenhouse: `anthropic`, Lever: `aleph`, Ashby: `emagine` and `openai`), and the results were compared side by side. Observations based on a single example are marked as such. After implementation, completeness was measured across all jobs of one board per ATS; those numbers appear under "Known limitations".
 
 ---
 
@@ -47,10 +47,10 @@ Greenhouse has two IDs: `id` (public, appears in the job URL) and `internal_job_
 **Filtering "jobs in Romania":** a job matches when `country == "RO"` **or** the `location` text contains "Romania" or a Romanian city (e.g. "Bucharest"). The text fallback is what finds Greenhouse jobs, which never have a country.
 
 **Known limitations:**
--Our lookup table is small. If Ashby says “Moldova” and Moldova isn’t in our table, we can’t convert it, so the job ends up with no country.
--The text check only knows the cities we list. If a Greenhouse job just says “Cluj” and “Cluj” isn’t on our list, we miss it.
--Some jobs have no single country. “Remote, EU” could be anywhere in Europe, so there’s no one code to give it.
--- The Ashby lookup only covers the countries listed in it; any other country name becomes `""` and relies on the text fallback. Measured on OpenAI (811 jobs): the first version of the table missed "South Korea" (8 jobs) and "Brazil" (4 jobs); after adding them, 808 of 811 jobs (99.6%) have a country. The remaining 3 have no country in the data at all.
+- The lookup table is small on purpose. A country name that isn't in it can't be converted, so the job ends up with no country and relies on the text fallback. Measured on OpenAI (811 jobs): the first version of the table missed "South Korea" (8 jobs) and "Brazil" (4 jobs); after adding them, 808 of 811 jobs (99.6%) have a country. The remaining 3 have no country in the data at all.
+- The text check only knows the cities in its list. If a Greenhouse job just says "Cluj" and "Cluj" isn't on the list, it's missed.
+- Some jobs have no single country. "Remote, EU" could be anywhere in Europe, so there's no one code to give it.
+
 ---
 
 ## workplace
@@ -59,7 +59,7 @@ Greenhouse has two IDs: `id` (public, appears in the job URL) and `internal_job_
 
 | ATS | Raw field(s) | Values seen | Notes |
 |---|---|---|---|
-| Lever | `workplaceType` | `hybrid`, `onsite` | Lowercase. `remote` expected per Lever's documentation, not yet seen. |
+| Lever | `workplaceType` | `hybrid`, `onsite`, `remote` | Lowercase. |
 | Ashby | `workplaceType`, `isRemote` | `Hybrid`, `null` / `true`, `null` | Two fields describe the same thing and can disagree: emagine has `isRemote: true` with `workplaceType: "Hybrid"`. |
 | Greenhouse | `metadata[]` entry with `name == "Location Type"`, its `value` | `On-Site` | A custom field each company defines for itself; other companies may name it differently or not have it. |
 
@@ -122,9 +122,8 @@ Greenhouse has two IDs: `id` (public, appears in the job URL) and `internal_job_
 **Known limitations:**
 - "posted" does not mean exactly the same thing in each ATS. Lever's `createdAt` is when the posting was created in Lever, which can be before it went public. Ashby's `publishedAt` may reset if a job is republished.
 - Converting to UTC can shift the date by one day: a job posted at 23:00 in New York on the 20th is stored as the 21st. That's acceptable for "last N days" filters, and the rule is the same for every source.
-
-
 - Measured completeness: 0 missing dates in Lever (Aleph, 112 jobs) and Ashby (OpenAI, 811 jobs).
+
 ---
 
 ## employment type (later)

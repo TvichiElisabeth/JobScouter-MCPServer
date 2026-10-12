@@ -65,6 +65,7 @@ COUNTRY_CODES = {
     "united states": "US", "united states of america": "US", "usa": "US",
     "canada": "CA", "israel": "IL", "united arab emirates": "AE",
     "india": "IN", "singapore": "SG", "japan": "JP", "australia": "AU",
+    "south korea": "KR", "brazil": "BR"
 }
 
 def country_code(name) -> str:
@@ -105,6 +106,9 @@ def normalize_lever(company: str, data: list) -> list[Job]:
             title=j.get("text", ""),
             location=(j.get("categories") or {}).get("location", ""),
             url=j.get("hostedUrl", ""),
+            posted=to_utc_date(j.get("createdAt")),
+            workplace=normalize_workplace(j.get("workplaceType")),
+            country=(j.get("country") or "").upper(),
         ))
     return jobs
 
@@ -120,12 +124,22 @@ def normalize_ashby(company: str, data: dict) -> list[Job]:
     """Convert Ashby's JSON format into our Job format."""
     jobs = []
     for j in data.get("jobs", []):
+        # workplaceType wins; isRemote is only a fallback when workplaceType is missing.
+        workplace = normalize_workplace(j.get("workplaceType"))
+        if not workplace and j.get("isRemote") is True:
+            workplace = "remote"
+
+        address = (j.get("address") or {}).get("postalAddress") or {}
+
         jobs.append(Job(
             id=f"ashby:{company}:{j['id']}",
             company=company,
             title=j.get("title", ""),
             location=j.get("location") or "",
             url=j.get("jobUrl", ""),
+            posted=to_utc_date(j.get("publishedAt")),
+            workplace=workplace,
+            country=country_code(address.get("addressCountry")),
         ))
     return jobs
 

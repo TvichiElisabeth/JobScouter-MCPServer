@@ -21,7 +21,7 @@ async def _get_json(url: str):
         resp.raise_for_status()
         return resp.json()
     
-# PostedDate Normalizer-------------------------------------------------
+# PostedDate Normalizer************************************
 def to_utc_date(value) -> str:
     """Convert an ISO 8601 string (Greenhouse, Ashby) or a Unix timestamp in
     milliseconds (Lever) to "YYYY-MM-DD" in UTC. Returns "" if missing or unreadable."""
@@ -38,18 +38,20 @@ def to_utc_date(value) -> str:
     except (ValueError, TypeError, OverflowError, OSError):
         return ""
 
-# Workplace Normalizer-------------------------------------------------
+# Workplace Normalizer************************************
 WORKPLACES = {"onsite", "hybrid", "remote"}
 
 def normalize_workplace(value) -> str:
-    """Map any spelling of a workplace type ("On-Site", "OnSite", "Hybrid", "remote")
-    to "onsite", "hybrid" or "remote". Returns "" for missing or unrecognised values."""
+    """Map any spelling of a workplace type ("On-Site", "OnSite", "Hybrid", "remote",
+    "Hybrid (Travel-Required)") to "onsite", "hybrid" or "remote".
+    Returns "" for missing or unrecognised values."""
     if not isinstance(value, str):
         return ""
+    value = value.split("(")[0]          # drop extra detail like "(Travel-Required)"
     key = value.lower().replace("-", "").replace(" ", "").replace("_", "")
     return key if key in WORKPLACES else ""
 
-# Country Normalizer-------------------------------------------------
+# Country Normalizer****************************************
 # Country name -> ISO 3166-1 alpha-2 code. Keys are lowercase.
 # Covers Europe (the project's focus) plus common hiring countries; extend as needed.
 COUNTRY_CODES = {
@@ -74,8 +76,28 @@ def country_code(name) -> str:
     if not isinstance(name, str):
         return ""
     return COUNTRY_CODES.get(name.strip().lower(), "")
-    
+
+
 # Greenhouse Normalizer + Fetcher---------------------------
+def greenhouse_metadata(job: dict, name: str):
+    """Return the value of the Greenhouse custom field called `name`
+    (e.g. "Location Type"), or None if this company doesn't define it."""
+    for field in job.get("metadata") or []:
+        if (field.get("name") or "").strip().lower() == name.lower():
+            return field.get("value")
+    return None 
+
+# Greenhouse has no standard workplace field; each company names its own custom field.
+# Found by checking every tracked company (see data_analysis/greenhouse_workplace_checks.py).
+GREENHOUSE_WORKPLACE_FIELDS = ("Location Type", "Work Type")
+def greenhouse_workplace(job: dict) -> str:
+    """Workplace for a Greenhouse job, from the first known custom field the company defines."""
+    for name in GREENHOUSE_WORKPLACE_FIELDS:
+        value = greenhouse_metadata(job, name)
+        if value is not None:
+            return normalize_workplace(value)
+    return ""
+
 def normalize_greenhouse(company: str, data: dict) -> list[Job]:
     """Convert Greenhouse's JSON format into our Job format."""
     jobs = []
@@ -86,6 +108,9 @@ def normalize_greenhouse(company: str, data: dict) -> list[Job]:
             title=j.get("title", ""),
             location=(j.get("location") or {}).get("name", ""),
             url=j.get("absolute_url", ""),
+            posted=to_utc_date(j.get("first_published")),
+            workplace=greenhouse_workplace(j),
+            country="",  # Greenhouse has no country field; filters fall back to the location text
         ))
     return jobs
 

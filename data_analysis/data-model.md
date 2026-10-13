@@ -5,6 +5,7 @@ JobScouterMCP reads open jobs from three applicant tracking systems (ATS): **Gre
 This document records, field by field, what each ATS actually returns, what JobScouterMCP stores, and why.
 
 **How the findings were gathered:** one raw job per ATS was inspected field by field (Greenhouse: `anthropic`, Lever: `aleph`, Ashby: `emagine` and `openai`), and the results were compared side by side. Observations based on a single example are marked as such. After implementation, completeness was measured across all jobs of one board per ATS; those numbers appear under "Known limitations".
+For Greenhouse workplace, one example wasn't enough: the field turned out to be company-specific, so all 5 tracked Greenhouse companies were checked (script: `data_analysis/greenhouse_workplace_checks.py`).
 
 ---
 
@@ -61,11 +62,11 @@ Greenhouse has two IDs: `id` (public, appears in the job URL) and `internal_job_
 |---|---|---|---|
 | Lever | `workplaceType` | `hybrid`, `onsite`, `remote` | Lowercase. |
 | Ashby | `workplaceType`, `isRemote` | `Hybrid`, `null` / `true`, `null` | Two fields describe the same thing and can disagree: emagine has `isRemote: true` with `workplaceType: "Hybrid"`. |
-| Greenhouse | `metadata[]` entry with `name == "Location Type"`, its `value` | `On-Site` | A custom field each company defines for itself; other companies may name it differently or not have it. |
+| Greenhouse | `metadata[]` entry named `"Location Type"` (Anthropic) or `"Work Type"` (Bitdefender), its `value` | `On-Site`, `Remote`, `Hybrid (Travel-Required)` / `Hybrid`, `Remote`, `Onsite` | Custom fields each company defines and names for itself. Showpad, Telnyx and Hootsuite publish no workplace field at all. |
 
 **Not the same concept:** `employmentType` (Ashby) and `categories.commitment` (Lever) describe the contract (full-time, part-time…), not the workplace. See [employment type](#employment-type-later).
 
-**Decision, spelling:** `workplace` is one of `"onsite"`, `"hybrid"`, `"remote"`, or `""` when unknown. Lowercase, no hyphens: the spelling Lever already uses. Other spellings are mapped to it (`"On-Site"` → `"onsite"`, `"Hybrid"` → `"hybrid"`).
+**Decision, spelling:** `workplace` is one of `"onsite"`, `"hybrid"`, `"remote"`, or `""` when unknown. Lowercase, no hyphens: the spelling Lever already uses. Other spellings are mapped to it (`"On-Site"` → `"onsite"`, `"Hybrid"` → `"hybrid"`). Text in brackets is dropped before matching, so `"Hybrid (Travel-Required)"` → `"hybrid"`.
 
 **Decision, Ashby conflict:** `workplaceType` wins. `isRemote` is used only when `workplaceType` is `null`, and then only `isRemote: true` → `"remote"`.
 
@@ -80,16 +81,21 @@ Greenhouse has two IDs: `id` (public, appears in the job URL) and `internal_job_
 **Why:** `workplaceType` has three values and `isRemote` only two, so only `workplaceType` can express "hybrid". When `isRemote` says `true` but the job is hybrid, `isRemote` is the less precise field. Storing `""` instead of a guess means a "remote only" filter skips unknown jobs rather than showing wrong ones.
 
 **Known limitations:**
-- Greenhouse only has workplace data when the company defines a "Location Type" custom field, so many Greenhouse jobs will be `""`.
+-  Greenhouse has no standard workplace field. The known names were found by listing every custom field of each tracked company. A new Greenhouse company may use another name; it then has to be added to `GREENHOUSE_WORKPLACE_FIELDS` in `sources.py`, otherwise its jobs stay `""`.
 - When Ashby's `workplaceType` is `null` and `isRemote` is `false`, the job could be onsite or hybrid, so it stays `""`.
-- Completeness differs a lot by source (measured 12 Oct 2026):
+- Completeness differs a lot by source (Lever and Ashby measured 12 Oct 2026, Greenhouse 13 Oct 2026):
 
   | Source | Jobs | hybrid | onsite | remote | unknown |
   |---|---|---|---|---|---|
   | Lever (Aleph) | 112 | 97 | 12 | 3 | 0 (0%) |
   | Ashby (OpenAI) | 811 | 506 | 28 | 20 | 257 (32%) |
+  | Greenhouse (Anthropic) | 644 | 9 | 556 | 19 | 60 (9%) |
+  | Greenhouse (Bitdefender) | 65 | 45 | 3 | 17 | 0 (0%) |
+  | Greenhouse (Showpad, Telnyx, Hootsuite) | 83 | 0 | 0 | 0 | 83 (100%) |
 
   About a third of OpenAI's jobs have neither `workplaceType` nor `isRemote: true`. Because unknown jobs are never guessed, a "remote only" filter can hide up to a third of OpenAI's jobs.
+
+  Greenhouse overall: 649 of 792 jobs (82%) have a known workplace. Before `"Work Type"` and the bracket rule were added, only Anthropic had any (577 of 794). The 60 unknown Anthropic jobs don't have the field at all; the 9 "Hybrid (Travel-Required)" jobs were unknown only because of their spelling.
 
 ---
 
@@ -122,7 +128,7 @@ Greenhouse has two IDs: `id` (public, appears in the job URL) and `internal_job_
 **Known limitations:**
 - "posted" does not mean exactly the same thing in each ATS. Lever's `createdAt` is when the posting was created in Lever, which can be before it went public. Ashby's `publishedAt` may reset if a job is republished.
 - Converting to UTC can shift the date by one day: a job posted at 23:00 in New York on the 20th is stored as the 21st. That's acceptable for "last N days" filters, and the rule is the same for every source.
-- Measured completeness: 0 missing dates in Lever (Aleph, 112 jobs) and Ashby (OpenAI, 811 jobs).
+- Measured completeness: 0 missing dates in Lever (Aleph, 112 jobs), Ashby (OpenAI, 811 jobs) and Greenhouse (5 companies, 792 jobs).
 
 ---
 

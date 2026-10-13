@@ -5,11 +5,12 @@ from pathlib import Path
 from mcp.server.mcpserver import MCPServer
 from JobScouterMCP.search import search
 from JobScouterMCP.sources import Job, Workplace, fetch_company
-
+from mcp.server.mcpserver.exceptions import ToolError
 log = logging.getLogger("JobScouterMCP")
 
 COMPANIES_FILE = Path(__file__).parent / "companies.json"
 COMPANIES = json.loads(COMPANIES_FILE.read_text(encoding="utf-8"))
+COMPANY_NAMES = sorted(c["name"] for c in COMPANIES)
 
 mcp = MCPServer("JobScouterMCP")
 
@@ -38,7 +39,7 @@ async def all_jobs() -> list[Job]:
 @mcp.tool()
 def list_companies() -> list[str]:
     """Names of all companies whose job boards JobScouterMCP tracks."""
-    return sorted(c["name"] for c in COMPANIES)
+    return COMPANY_NAMES
 
 
 @mcp.tool()
@@ -46,6 +47,7 @@ async def search_jobs(
     query: str = "",
     workplace: Workplace | None = None,
     posted_within_days: int | None = None,
+    company: str | None = None,
 ) -> dict:
     """Search open jobs at all tracked companies. Returns at most 25 jobs, newest first.
 
@@ -54,6 +56,8 @@ async def search_jobs(
         their workplace are not counted as matches; they are listed separately under
         workplace_unknown.
     posted_within_days: only jobs posted in the last N days, e.g. 14.
+    company: only jobs at this company, e.g. "Bitdefender". Must be one of the names
+    returned by list_companies (case doesn't matter).
 
     How to present the result: first say how many jobs matched (total_matches).
     If workplace_unknown is present, mention its count and present those jobs
@@ -61,10 +65,16 @@ async def search_jobs(
     Then list the jobs. If total_matches is larger than showing, say so and
     suggest narrowing the search with more filters.
     """
-    log.info("search_jobs query=%r workplace=%r posted_within_days=%r",
-             query, workplace, posted_within_days)
+    if company and company.lower() not in {name.lower() for name in COMPANY_NAMES}:
+          raise ToolError(
+              f"Unknown company {company!r}. Tracked companies: {', '.join(COMPANY_NAMES)}"
+          )
+    
+    log.info("search_jobs query=%r workplace=%r posted_within_days=%r company=%r",
+               query, workplace, posted_within_days, company)
     jobs = await all_jobs()
-    result = search(jobs, query, workplace, posted_within_days)
+    result = search(jobs, query=query, workplace=workplace,
+                      posted_within_days=posted_within_days, company=company)
     unknown = result.get("workplace_unknown", {}).get("count", "-")
     log.info("search_jobs: %d of %d jobs match, showing %d, workplace unknown: %s",
              result["total_matches"], len(jobs), result["showing"], unknown)

@@ -20,6 +20,7 @@ def filter_jobs(
     query: str = "",
     workplace: Workplace | None = None,
     posted_within_days: int | None = None,
+    company: str | None = None,
 ) -> list[Job]:
     """Keep only the jobs that match every filter given. A filter left as None/"" is ignored.
 
@@ -39,6 +40,8 @@ def filter_jobs(
             continue                      # unknown ("") never matches: no guessing
         if posted_within_days is not None and (not j["posted"] or j["posted"] < cutoff):
             continue                      # ISO dates compare correctly as plain text
+        if company and j["company"].lower() != company.lower():
+            continue                      # case-insensitive: "bitdefender" finds "Bitdefender"
         result.append(j)
     return result
 
@@ -54,6 +57,7 @@ def search(
     query: str = "",
     workplace: Workplace | None = None,
     posted_within_days: int | None = None,
+    company: str | None = None
 ) -> dict:
     """Filter jobs and return a structured result: how many matched, the newest
     matches, and (when filtering by workplace) the jobs left out only because
@@ -63,7 +67,9 @@ def search(
     lives in its own function.
     """
     # 1st use of the sieve, with every filter: the real matches.
-    matches = newest_first(filter_jobs(jobs, query, workplace, posted_within_days))
+    matches = newest_first(filter_jobs(
+        jobs, query=query, workplace=workplace,
+        posted_within_days=posted_within_days, company=company))
 
     # Counts come first, so Claude reads them before the long list of jobs.
     result = {
@@ -80,7 +86,10 @@ def search(
         # instead of being counted as matches (no guessing) or silently dropped.
         # Without a workplace filter, these jobs are already normal matches,
         # so the group is only added when one is set.
-        unknown = [j for j in filter_jobs(jobs, query, None, posted_within_days) if j["workplace"] == ""]
+        unknown = [j for j in filter_jobs(
+            jobs, query=query, workplace=None, 
+            posted_within_days=posted_within_days, company=company
+            ) if j["workplace"] == ""]
         result["workplace_unknown"] = {
             "count": len(unknown),
             "jobs": newest_first(unknown)[:MAX_UNKNOWN_SHOWN],

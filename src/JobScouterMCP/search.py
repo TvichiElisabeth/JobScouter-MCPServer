@@ -7,11 +7,15 @@ Three layers, each with one job:
       └─ search               builds the answer: sort, count, cut to 25, partial matches
            └─ filter_jobs     the sieve: which jobs pass the filters?
 """
+import re
 from datetime import datetime, timedelta, timezone
 from JobScouterMCP.sources import COUNTRY_CITIES, Job, Workplace, country_code
 
 MAX_RESULTS = 25         # jobs returned to Claude; more would flood its context
 MAX_UNKNOWN_SHOWN = 10   # partial matches shown; their full number is still counted
+
+
+
 
 def matches_location(job: Job, location: str) -> bool:
     """True if the job is in `location`: a country name ("Romania"), an ISO code
@@ -32,6 +36,19 @@ def matches_location(job: Job, location: str) -> bool:
     return any(w in text for w in words)
 
 
+def query_pattern(query: str) -> re.Pattern:
+    """Build the pattern a job title must match.
+
+    Short queries (3 characters or fewer) are usually acronyms, so they must be a
+    whole word: "ml" matches "ML Engineer" but not "HTML". Longer queries only
+    have to start a word, so "engineer" still matches "Engineering".
+    """
+    text = re.escape(query.strip())
+    start = r"(?<!\w)"                                   # no letter/digit right before
+    end = r"(?!\w)" if len(query.strip()) <= 3 else ""   # no letter/digit right after
+    return re.compile(start + text + end, re.IGNORECASE)
+
+
 def filter_jobs(
     jobs: list[Job],
     query: str = "",
@@ -49,10 +66,12 @@ def filter_jobs(
         today = datetime.now(timezone.utc).date()
         cutoff = (today - timedelta(days=posted_within_days)).isoformat()
 
+    pattern = query_pattern(query) if query else None
+
     result = []
     for j in jobs:
         # Each check that fails skips the job; only jobs passing all checks are kept.
-        if query and query.lower() not in j["title"].lower():
+        if pattern and not pattern.search(j["title"]):
             continue
         if workplace and j["workplace"] != workplace:
             continue                      # unknown ("") never matches: no guessing

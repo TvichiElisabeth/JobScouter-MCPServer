@@ -3,7 +3,7 @@ import json
 import logging
 from pathlib import Path
 from mcp.server.mcpserver import MCPServer
-from JobScouterMCP.search import filter_jobs
+from JobScouterMCP.search import search
 from JobScouterMCP.sources import Job, Workplace, fetch_company
 
 log = logging.getLogger("JobScouterMCP")
@@ -46,19 +46,29 @@ async def search_jobs(
     query: str = "",
     workplace: Workplace | None = None,
     posted_within_days: int | None = None,
-) -> list[dict]:
-    """Search open jobs at all tracked companies.
+) -> dict:
+    """Search open jobs at all tracked companies. Returns at most 25 jobs, newest first.
 
     query: keyword in the job title, e.g. "engineer" or "machine learning". Empty = all jobs.
-    workplace: only jobs that are "onsite", "hybrid" or "remote". Jobs whose workplace
-        is unknown are left out when this is set.
+    workplace: only jobs that are "onsite", "hybrid" or "remote". Jobs that don't state
+        their workplace are not counted as matches; they are listed separately under
+        workplace_unknown.
     posted_within_days: only jobs posted in the last N days, e.g. 14.
+
+    How to present the result: first say how many jobs matched (total_matches).
+    If workplace_unknown is present, mention its count and present those jobs
+    separately as possible matches whose workplace isn't stated.
+    Then list the jobs. If total_matches is larger than showing, say so and
+    suggest narrowing the search with more filters.
     """
     log.info("search_jobs query=%r workplace=%r posted_within_days=%r",
              query, workplace, posted_within_days)
     jobs = await all_jobs()
-    return filter_jobs(jobs, query, workplace, posted_within_days)
-
+    result = search(jobs, query, workplace, posted_within_days)
+    unknown = result.get("workplace_unknown", {}).get("count", "-")
+    log.info("search_jobs: %d of %d jobs match, showing %d, workplace unknown: %s",
+             result["total_matches"], len(jobs), result["showing"], unknown)
+    return result
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)

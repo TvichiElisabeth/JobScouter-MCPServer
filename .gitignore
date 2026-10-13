@@ -4,4 +4,4 @@ __pycache__/
 .env
 JobScouterMCP-context.md
 *.xlsx
-tests/try_strSearch.py
+try_*.py

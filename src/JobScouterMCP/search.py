@@ -8,11 +8,28 @@ Three layers, each with one job:
            └─ filter_jobs     the sieve: which jobs pass the filters?
 """
 from datetime import datetime, timedelta, timezone
-
-from JobScouterMCP.sources import Job, Workplace
+from JobScouterMCP.sources import COUNTRY_CITIES, Job, Workplace, country_code
 
 MAX_RESULTS = 25         # jobs returned to Claude; more would flood its context
 MAX_UNKNOWN_SHOWN = 10   # partial matches shown; their full number is still counted
+
+def matches_location(job: Job, location: str) -> bool:
+    """True if the job is in `location`: a country name ("Romania"), an ISO code
+    ("RO") or a city ("Berlin"). Checks the job's country code first, then its
+    location text, because Greenhouse jobs only have text."""
+    wanted = location.strip().lower()
+
+    # Which country, if any, was asked for? "Romania" -> "RO", "uk" -> "GB", "ro" -> "RO".
+    code = country_code(wanted) or (wanted.upper() if len(wanted) == 2 else "")
+    if code and job["country"] == code:
+        return True
+
+    # Words to look for in the location text: the name itself (but never a
+    # 2-letter code: "us" would match "Austin") plus that country's cities.
+    words = [wanted] if len(wanted) > 2 else []
+    words += COUNTRY_CITIES.get(code, [])
+    text = job["location"].lower()
+    return any(w in text for w in words)
 
 
 def filter_jobs(
@@ -21,6 +38,7 @@ def filter_jobs(
     workplace: Workplace | None = None,
     posted_within_days: int | None = None,
     company: str | None = None,
+    location: str | None = None,
 ) -> list[Job]:
     """Keep only the jobs that match every filter given. A filter left as None/"" is ignored.
 
@@ -42,6 +60,8 @@ def filter_jobs(
             continue                      # ISO dates compare correctly as plain text
         if company and j["company"].lower() != company.lower():
             continue                      # case-insensitive: "bitdefender" finds "Bitdefender"
+        if location and not matches_location(j, location):
+            continue
         result.append(j)
     return result
 
@@ -57,7 +77,8 @@ def search(
     query: str = "",
     workplace: Workplace | None = None,
     posted_within_days: int | None = None,
-    company: str | None = None
+    company: str | None = None,
+    location: str | None = None,
 ) -> dict:
     """Filter jobs and return a structured result: how many matched, the newest
     matches, and (when filtering by workplace) the jobs left out only because
@@ -69,7 +90,7 @@ def search(
     # 1st use of the sieve, with every filter: the real matches.
     matches = newest_first(filter_jobs(
         jobs, query=query, workplace=workplace,
-        posted_within_days=posted_within_days, company=company))
+        posted_within_days=posted_within_days, company=company, location=location))
 
     # Counts come first, so Claude reads them before the long list of jobs.
     result = {
@@ -88,7 +109,7 @@ def search(
         # so the group is only added when one is set.
         unknown = [j for j in filter_jobs(
             jobs, query=query, workplace=None, 
-            posted_within_days=posted_within_days, company=company
+            posted_within_days=posted_within_days, company=company,location=location
             ) if j["workplace"] == ""]
         result["workplace_unknown"] = {
             "count": len(unknown),

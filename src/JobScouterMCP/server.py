@@ -48,6 +48,7 @@ async def search_jobs(
     workplace: Workplace | None = None,
     posted_within_days: int | None = None,
     company: str | None = None,
+    location: str | None = None
 ) -> dict:
     """Search open jobs at all tracked companies. Returns at most 25 jobs, newest first.
 
@@ -58,6 +59,8 @@ async def search_jobs(
     posted_within_days: only jobs posted in the last N days, e.g. 14.
     company: only jobs at this company, e.g. "Bitdefender". Must be one of the names
     returned by list_companies (case doesn't matter).
+    location: only jobs in this place: a country ("Romania", "Germany"), an ISO
+         country code ("RO") or a city ("Berlin"). For remote jobs use workplace instead.
 
     How to present the result: first say how many jobs matched (total_matches).
     If workplace_unknown is present, mention its count and present those jobs
@@ -70,15 +73,16 @@ async def search_jobs(
               f"Unknown company {company!r}. Tracked companies: {', '.join(COMPANY_NAMES)}"
           )
     
-    log.info("search_jobs query=%r workplace=%r posted_within_days=%r company=%r",
-               query, workplace, posted_within_days, company)
+    log.info("search_jobs query=%r workplace=%r posted_within_days=%r company=%r,location=%r",
+               query, workplace, posted_within_days, company, location)
     jobs = await all_jobs()
     result = search(jobs, query=query, workplace=workplace,
-                      posted_within_days=posted_within_days, company=company)
+                      posted_within_days=posted_within_days, company=company, location=location)
     unknown = result.get("workplace_unknown", {}).get("count", "-")
     log.info("search_jobs: %d of %d jobs match, showing %d, workplace unknown: %s",
              result["total_matches"], len(jobs), result["showing"], unknown)
     return result
+
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)

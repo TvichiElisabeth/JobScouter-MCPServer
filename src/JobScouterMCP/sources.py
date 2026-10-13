@@ -78,6 +78,13 @@ def country_code(name) -> str:
         return ""
     return COUNTRY_CODES.get(name.strip().lower(), "")
 
+# Main cities per country, so a country search also finds jobs whose location
+# Text only names a city (Greenhouse has no country field). 
+COUNTRY_CITIES = {
+    "RO": ["bucharest", "bucuresti", "cluj", "iasi", "timisoara", "brasov", "sibiu", "constanta"],
+}
+
+
 
 # Greenhouse Normalizer + Fetcher---------------------------
 def greenhouse_metadata(job: dict, name: str):

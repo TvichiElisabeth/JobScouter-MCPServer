@@ -2,10 +2,9 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-
 from mcp.server.mcpserver import MCPServer
-
-from JobScouterMCP.sources import Job, fetch_company
+from JobScouterMCP.search import filter_jobs
+from JobScouterMCP.sources import Job, Workplace, fetch_company
 
 log = logging.getLogger("JobScouterMCP")
 
@@ -43,12 +42,22 @@ def list_companies() -> list[str]:
 
 
 @mcp.tool()
-async def search_jobs(query: str) -> list[dict]:
-    """Search open jobs at all tracked companies by keyword in the job title,
-    e.g. "engineer" or "machine learning"."""
-    log.info("search_jobs called with query=%r", query)
+async def search_jobs(
+    query: str = "",
+    workplace: Workplace | None = None,
+    posted_within_days: int | None = None,
+) -> list[dict]:
+    """Search open jobs at all tracked companies.
+
+    query: keyword in the job title, e.g. "engineer" or "machine learning". Empty = all jobs.
+    workplace: only jobs that are "onsite", "hybrid" or "remote". Jobs whose workplace
+        is unknown are left out when this is set.
+    posted_within_days: only jobs posted in the last N days, e.g. 14.
+    """
+    log.info("search_jobs query=%r workplace=%r posted_within_days=%r",
+             query, workplace, posted_within_days)
     jobs = await all_jobs()
-    return [j for j in jobs if query.lower() in j["title"].lower()]
+    return filter_jobs(jobs, query, workplace, posted_within_days)
 
 
 def main() -> None:

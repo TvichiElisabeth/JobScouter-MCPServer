@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import Literal, TypedDict
 from datetime import datetime, timezone
 import httpx
 
@@ -40,6 +40,7 @@ def to_utc_date(value) -> str:
 
 # Workplace Normalizer************************************
 WORKPLACES = {"onsite", "hybrid", "remote"}
+Workplace = Literal["onsite", "hybrid", "remote"]
 
 def normalize_workplace(value) -> str:
     """Map any spelling of a workplace type ("On-Site", "OnSite", "Hybrid", "remote",

@@ -14,6 +14,16 @@ class Job(TypedDict):
     workplace: str   # "onsite", "hybrid", "remote", or "" if unknown
     country: str     # ISO 3166-1 alpha-2 code like "RO", or "" if unknown
 
+def parse_job_id(job_id: str) -> tuple[str, str, str]:
+    """Split a job id like "greenhouse:Anthropic:5436293008" into
+    (source, company, id), the reverse of how the normalizers build ids.
+    Raises ValueError if the id doesn't have that shape."""
+    parts = job_id.strip().split(":", 2)
+    if len(parts) != 3 or not all(parts):      # all(): no empty piece like "greenhouse::123"
+        raise ValueError(f"not a JobScouterMCP job id: {job_id!r}")
+    source, company, raw_id = parts
+    return source, company, raw_id
+
 async def _get_json(url: str):
     """Download a URL and return its parsed JSON. Raises on HTTP errors (404, 500...)."""
     async with httpx.AsyncClient() as client:
@@ -85,7 +95,7 @@ COUNTRY_CITIES = {
 }
 
 
-
+#************************************************************************************************
 # Greenhouse Normalizer + Fetcher---------------------------
 def greenhouse_metadata(job: dict, name: str):
     """Return the value of the Greenhouse custom field called `name`
@@ -122,11 +132,11 @@ def normalize_greenhouse(company: str, data: dict) -> list[Job]:
         ))
     return jobs
 
-
 async def fetch_greenhouse(company: str, board: str) -> list[Job]:
     """Download a company's open jobs from Greenhouse and return them as Jobs."""
     data = await _get_json(f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs")
     return normalize_greenhouse(company, data)
+
 
 # Lever Normalizer + Fetcher---------------------------------------
 def normalize_lever(company: str, data: list) -> list[Job]:
@@ -144,7 +154,6 @@ def normalize_lever(company: str, data: list) -> list[Job]:
             country=(j.get("country") or "").upper(),
         ))
     return jobs
-
 
 async def fetch_lever(company: str, board: str) -> list[Job]:
     """Download a company's open jobs from Lever and return them as Jobs."""
@@ -176,19 +185,17 @@ def normalize_ashby(company: str, data: dict) -> list[Job]:
         ))
     return jobs
 
-
 async def fetch_ashby(company: str, board: str) -> list[Job]:
     """Download a company's open jobs from Ashby and return them as Jobs."""
     data = await _get_json(f"https://api.ashbyhq.com/posting-api/job-board/{board}")
     return normalize_ashby(company, data)
 
-# Dispatch -----------------------------
+# Dispatch -----------------------------------------------------------
 FETCHERS = {
     "greenhouse": fetch_greenhouse,
     "ashby": fetch_ashby,
     "lever": fetch_lever,
 }
-
 
 async def fetch_company(company: dict) -> list[Job]:
     """Fetch one company's jobs using the right fetcher for its "source" in companies.json."""

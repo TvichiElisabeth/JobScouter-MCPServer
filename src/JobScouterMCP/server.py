@@ -4,13 +4,14 @@ import logging
 from pathlib import Path
 from mcp.server.mcpserver import MCPServer
 from JobScouterMCP.search import search
-from JobScouterMCP.sources import Job, Workplace, fetch_company
+from JobScouterMCP.sources import Job, Workplace, fetch_company, parse_job_id
 from mcp.server.mcpserver.exceptions import ToolError
 log = logging.getLogger("JobScouterMCP")
 
 COMPANIES_FILE = Path(__file__).parent / "companies.json"
 COMPANIES = json.loads(COMPANIES_FILE.read_text(encoding="utf-8"))
 COMPANY_NAMES = sorted(c["name"] for c in COMPANIES)
+COMPANIES_BY_KEY = {(c["source"], c["name"].lower()): c for c in COMPANIES} # (source, lowercase name) -> company entry, so a job id finds its board in one lookup.
 
 mcp = MCPServer("JobScouterMCP")
 
@@ -35,6 +36,21 @@ async def all_jobs() -> list[Job]:
     log.info("fetched %d jobs from %d of %d companies", len(jobs), ok, len(COMPANIES))
     return jobs
 
+def company_for_job(job_id: str) -> tuple[dict, str]:
+    """Find the tracked company a job id belongs to. Returns (company entry, job number).
+    Raises ToolError for ids Claude could fix, before any download."""
+    try:
+        source, name, raw_id = parse_job_id(job_id)
+    except ValueError as e:
+        raise ToolError(f"{e}. Use the id field of a job returned by search_jobs.") from e
+
+    company = COMPANIES_BY_KEY.get((source, name.lower()))
+    if company is None:
+        raise ToolError(f"No tracked company {name!r} on {source!r}. "
+                        f"Tracked companies: {', '.join(COMPANY_NAMES)}")
+    return company, raw_id
+
+# Tools----------------------------------------------------------------
 
 @mcp.tool()
 def list_companies() -> list[str]:
@@ -53,12 +69,16 @@ async def search_jobs(
     """Search open jobs at all tracked companies. Returns at most 25 jobs, newest first.
 
     query: keyword in the job title, e.g. "engineer" or "machine learning". Empty = all jobs.
+
     workplace: only jobs that are "onsite", "hybrid" or "remote". Jobs that don't state
         their workplace are not counted as matches; they are listed separately under
         workplace_unknown.
+
     posted_within_days: only jobs posted in the last N days, e.g. 14.
+
     company: only jobs at this company, e.g. "Bitdefender". Must be one of the names
     returned by list_companies (case doesn't matter).
+
     location: only jobs in this place: a country ("Romania", "Germany"), an ISO
          country code ("RO") or a city ("Berlin"). For remote jobs use workplace instead.
 

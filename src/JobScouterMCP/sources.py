@@ -15,6 +15,11 @@ class Job(TypedDict):
     workplace: str   # "onsite", "hybrid", "remote", or "" if unknown
     country: str     # ISO 3166-1 alpha-2 code like "RO", or "" if unknown
 
+class JobDetails(Job):
+    """A Job plus its full plain-text description; returned by get_job_details."""
+    description: str
+
+
 def parse_job_id(job_id: str) -> tuple[str, str, str]:
     """Split a job id like "greenhouse:Anthropic:5436293008" into
     (source, company, id), the reverse of how the normalizers build ids.
@@ -154,6 +159,11 @@ async def fetch_greenhouse(company: str, board: str) -> list[Job]:
     data = await _get_json(f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs")
     return normalize_greenhouse(company, data)
 
+async def fetch_greenhouse_job(company: str, board: str, job_id: str) -> JobDetails:
+    """Download one Greenhouse job, including its description."""
+    data = await _get_json(f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs/{job_id}")
+    job = normalize_greenhouse(company, {"jobs": [data]})[0]   # reuse: same fields as in the list
+    return JobDetails(**job, description=html_to_text(data.get("content")))
 
 # Lever Normalizer + Fetcher---------------------------------------
 def normalize_lever(company: str, data: list) -> list[Job]:

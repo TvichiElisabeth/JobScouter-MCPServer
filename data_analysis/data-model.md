@@ -76,7 +76,7 @@ Greenhouse has two IDs: `id` (public, appears in the job URL) and `internal_job_
 |---|---|
 | Lever | `workplaceType`, lowercased |
 | Ashby | `workplaceType` normalized; if `null`, `"remote"` when `isRemote` is `true`, else `""` |
-| Greenhouse | value of the `metadata` entry named `"Location Type"`, normalized; `""` if the entry doesn't exist |
+| Greenhouse | value of the first known custom field found ("Location Type", then "Work Type"), normalized; "" if the company defines neither |
 
 **Why:** `workplaceType` has three values and `isRemote` only two, so only `workplaceType` can express "hybrid". When `isRemote` says `true` but the job is hybrid, `isRemote` is the less precise field. Storing `""` instead of a guess means a "remote only" filter skips unknown jobs rather than showing wrong ones.
 

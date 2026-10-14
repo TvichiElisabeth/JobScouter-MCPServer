@@ -1,8 +1,8 @@
 # JobScouterMCP
 
-**An MCP server that lets Claude search open jobs straight from companies' hiring systems, and tells you honestly what it couldn't determine.**
 
-> LinkedIn is where you find people and apply. JobScouterMCP is your research assistant: it searches the companies you care about, reads every posting, and (soon) tells you where you fit and what to learn next.
+
+**LinkedIn is where you find people and apply. JobScouterMCP is your research assistant: it searches the companies you care about, reads every posting, and (soon) tells you where you fit and what to learn next.**
 
 <!-- TODO: demo GIF of Claude using search_jobs -->
 

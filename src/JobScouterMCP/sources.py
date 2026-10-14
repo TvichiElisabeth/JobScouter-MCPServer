@@ -1,7 +1,8 @@
 from typing import Literal, TypedDict
 from datetime import datetime, timezone
 import httpx
-
+import html
+import re
 
 class Job(TypedDict):
     """One job posting, in the same shape no matter which job board it came from."""
@@ -93,6 +94,22 @@ def country_code(name) -> str:
 COUNTRY_CITIES = {
     "RO": ["bucharest", "bucuresti", "cluj", "iasi", "timisoara", "brasov", "sibiu", "constanta"],
 }
+
+# Description Normalizer************************************
+def html_to_text(raw) -> str:
+    """Turn an HTML job description into readable plain text: paragraphs on
+    their own lines, list items as "- " bullets. Greenhouse escapes its HTML
+    (&lt;p&gt;), so it is unescaped once before the tags are removed and once after.
+    Returns "" for missing descriptions."""
+    if not isinstance(raw, str):
+        return ""
+    text = html.unescape(raw)                                              # 1. &lt;p&gt; -> <p>
+    text = re.sub(r"<li\b[^>]*>", "\n- ", text, flags=re.I)                # 2. list item -> bullet
+    text = re.sub(r"<(br|/p|/div|/h\d|/ul|/ol)\b[^>]*>", "\n", text, flags=re.I)  # 3. block end -> new line
+    text = re.sub(r"<[^>]+>", "", text)                                    # 4. drop all remaining inline or opening HTML tags that don't need dedicated line breaks
+    text = html.unescape(text).replace("\xa0", " ")                        # 5. R&amp;D -> R&D, &nbsp; -> space
+    lines = [" ".join(line.split()) for line in text.splitlines()]         # 6. tidy spaces on each line
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()             # 7. at most one blank line
 
 
 #************************************************************************************************

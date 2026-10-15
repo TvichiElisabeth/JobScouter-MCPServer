@@ -19,6 +19,8 @@ class JobDetails(Job):
     """A Job plus its full plain-text description; returned by get_job_details."""
     description: str
 
+class JobNotFound(Exception):
+    """The id points to a tracked board, but the job isn't on it (usually: it closed)."""
 
 def parse_job_id(job_id: str) -> tuple[str, str, str]:
     """Split a job id like "greenhouse:Anthropic:5436293008" into
@@ -207,6 +209,7 @@ async def fetch_lever_job(company: str, board: str, job_id: str) -> JobDetails:
     job = normalize_lever(company, [data])[0]     # Lever's list is a bare list, so wrap in [ ]
     return JobDetails(**job, description=lever_description(data))
 
+
 # Ashby Normalizer + Fetcher---------------------------------------
 def normalize_ashby(company: str, data: dict) -> list[Job]:
     """Convert Ashby's JSON format into our Job format."""
@@ -235,6 +238,16 @@ async def fetch_ashby(company: str, board: str) -> list[Job]:
     """Download a company's open jobs from Ashby and return them as Jobs."""
     data = await _get_json(f"https://api.ashbyhq.com/posting-api/job-board/{board}")
     return normalize_ashby(company, data)
+
+async def fetch_ashby_job(company: str, board: str, job_id: str) -> JobDetails:
+    """Download one Ashby job, including its description. Ashby has no public
+    one-job endpoint, so this downloads the board and picks the job."""
+    data = await _get_json(f"https://api.ashbyhq.com/posting-api/job-board/{board}")
+    for j in data.get("jobs", []):
+        if j.get("id") == job_id:
+            job = normalize_ashby(company, {"jobs": [j]})[0]
+            return JobDetails(**job, description=html_to_text(j.get("descriptionHtml")))
+    raise JobNotFound(job_id)
 
 
 # Dispatch -----------------------------------------------------------

@@ -115,8 +115,9 @@ def html_to_text(raw) -> str:
     text = html.unescape(text).replace("\xa0", " ")                        # 5. R&amp;D -> R&D, &nbsp; -> space
     lines = [" ".join(line.split()) for line in text.splitlines()]         # 6. tidy spaces on each line
     text = "\n".join(lines)
-    text = re.sub(r"\n\n+- ", "\n- ", text)               # 7. no blank line before a bullet
-    return re.sub(r"\n{3,}", "\n\n", text).strip()        # 8. at most one blank line
+    text = re.sub(r"^-\n+", "- ", text, flags=re.M)        # 7. bullet text on its own line -> join it to the "-"
+    text = re.sub(r"\n\n+- ", "\n- ", text)                # 8. no blank line before a bullet
+    return re.sub(r"\n{3,}", "\n\n", text).strip()         # 9. at most one blank line
 
 
 #************************************************************************************************
@@ -167,6 +168,7 @@ async def fetch_greenhouse_job(company: str, board: str, job_id: str) -> JobDeta
     job = normalize_greenhouse(company, {"jobs": [data]})[0]   # reuse: same fields as in the list
     return JobDetails(**job, description=html_to_text(data.get("content")))
 
+
 # Lever Normalizer + Fetcher---------------------------------------
 def normalize_lever(company: str, data: list) -> list[Job]:
     """Convert Lever's JSON format into our Job format. Lever returns a plain list, not {"jobs": [...]}."""
@@ -189,6 +191,21 @@ async def fetch_lever(company: str, board: str) -> list[Job]:
     data = await _get_json(f"https://api.lever.co/v0/postings/{board}?mode=json")
     return normalize_lever(company, data)
 
+def lever_description(j: dict) -> str:
+    """Lever splits a description into an intro, titled lists ("Requirements",
+    "What you'll do") and a closing part. Join them into one plain text."""
+    # We target html fields because they hold more information(eg: list[content], which the plain fields do not have)
+    parts = [html_to_text(j.get("description"))]  #description already contains opening + descriptionBody (the intro)
+    for section in j.get("lists") or []:
+        parts.append(f"{section.get('text') or ''}\n{html_to_text(section.get('content'))}")  #(the body)
+    parts.append(html_to_text(j.get("additional")))  #(the closing)
+    return "\n\n".join(p.strip() for p in parts if p.strip())   # skip empty parts
+
+async def fetch_lever_job(company: str, board: str, job_id: str) -> JobDetails:
+    """Download one Lever job, including its description."""
+    data = await _get_json(f"https://api.lever.co/v0/postings/{board}/{job_id}")
+    job = normalize_lever(company, [data])[0]     # Lever's list is a bare list, so wrap in [ ]
+    return JobDetails(**job, description=lever_description(data))
 
 # Ashby Normalizer + Fetcher---------------------------------------
 def normalize_ashby(company: str, data: dict) -> list[Job]:
@@ -218,6 +235,7 @@ async def fetch_ashby(company: str, board: str) -> list[Job]:
     """Download a company's open jobs from Ashby and return them as Jobs."""
     data = await _get_json(f"https://api.ashbyhq.com/posting-api/job-board/{board}")
     return normalize_ashby(company, data)
+
 
 # Dispatch -----------------------------------------------------------
 FETCHERS = {

@@ -263,3 +263,23 @@ async def fetch_company(company: dict) -> list[Job]:
     if fetcher is None:
         raise ValueError(f"unknown source {company['source']!r}")
     return await fetcher(company["name"], company["board"])
+
+
+DETAIL_FETCHERS = {
+    "greenhouse": fetch_greenhouse_job,
+    "lever": fetch_lever_job,
+    "ashby": fetch_ashby_job,
+}
+
+async def fetch_job_details(company: dict, job_id: str) -> JobDetails:
+    """Fetch one job with its description, using the right fetcher for the company's source.
+    Raises JobNotFound if the job is no longer on the board."""
+    fetcher = DETAIL_FETCHERS.get(company["source"])
+    if fetcher is None:
+        raise ValueError(f"unknown source {company['source']!r}")
+    try:
+        return await fetcher(company["name"], company["board"], job_id)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:     # Greenhouse/Lever: the job closed
+            raise JobNotFound(job_id) from e
+        raise                                 # any other HTTP error: let it surface as it is

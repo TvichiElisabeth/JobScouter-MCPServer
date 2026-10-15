@@ -4,7 +4,8 @@ import logging
 from pathlib import Path
 from mcp.server.mcpserver import MCPServer
 from JobScouterMCP.search import search
-from JobScouterMCP.sources import Job, Workplace, fetch_company, parse_job_id
+from JobScouterMCP.sources import (Job, JobNotFound, Workplace, fetch_company,
+                                   fetch_job_details, parse_job_id)
 from mcp.server.mcpserver.exceptions import ToolError
 log = logging.getLogger("JobScouterMCP")
 
@@ -16,6 +17,7 @@ COMPANIES_BY_KEY = {(c["source"], c["name"].lower()): c for c in COMPANIES} # (s
 mcp = MCPServer("JobScouterMCP")
 
 FETCH_DEADLINE = 8  # seconds; a company slower than this is skipped for this search
+MAX_DESCRIPTION_CHARS = 12_000  # above every description measured (max 10,297); protects Claude's context
 
 async def all_jobs() -> list[Job]:
     """Fetch jobs from every tracked company at the same time. Boards that fail
@@ -103,6 +105,40 @@ async def search_jobs(
              result["total_matches"], len(jobs), result["showing"], unknown)
     return result
 
+
+@mcp.tool()
+async def get_job_details(job_id: str) -> dict:
+    """Full details of one job, including its plain-text description.
+
+    job_id: the id field of a job returned by search_jobs,
+        e.g. "greenhouse:Anthropic:5436293008".
+
+    Use this after search_jobs, when the user wants to know more about a specific
+    job (what the role involves, requirements, benefits). Call it only for the jobs
+    the user asks about, not for every search result.
+
+    How to present the result: summarise what the role involves and what it
+    requires; quote the description only where exact wording matters. If
+    description_truncated is true, say the description was cut and give the url
+    for the full posting.
+    """
+    log.info("get_job_details job_id=%r", job_id)
+    company, raw_id = company_for_job(job_id)
+    try:
+        job = await fetch_job_details(company, raw_id)
+    except JobNotFound as e:
+        raise ToolError(
+            f"Job {job_id!r} is no longer on {company['name']}'s job board; it has "
+            f"probably closed. Run search_jobs again to see current jobs."
+        ) from e
+
+    description = job.pop("description")
+    truncated = len(description) > MAX_DESCRIPTION_CHARS
+    log.info("get_job_details: %s, %d characters, truncated=%s",
+             job["id"], len(description), truncated)
+    return {**job,
+            "description_truncated": truncated,
+            "description": description[:MAX_DESCRIPTION_CHARS]}
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)

@@ -18,6 +18,7 @@ With JobScouterMCP connected, Claude can answer questions like:
 - *"Show me ML jobs in Romania."*
 - *"What is Bitdefender hiring for right now?"*
 - *"Which companies do you track?"*
+- *"What does the second job require? Is it a fit for a junior?"* (This is related to the tool get_job_details => This one shows the new ability, reading one posting in depth, and it shows how people will actually use it: as a follow-up to a search, not with an id typed by hand.)
 
 Claude picks the tool and its arguments; JobScouterMCP fetches the jobs, filters them in code and returns a structured result.
 
@@ -68,6 +69,22 @@ Each job has the same shape, whichever hiring system it came from:
   "country": ""
 }
 ```
+### `get_job_details(job_id)`
+
+Full details of one job, including its description as plain text. `job_id` is the `id` of a job returned by `search_jobs`, e.g. `"lever:Aleph:0db5cfae-..."`.
+
+```json
+{
+  "id": "lever:Aleph:0db5cfae-3bc7-4268-804a-effa0a012efc",
+  "company": "Aleph",
+  "title": "Audit & Compliance Manager, Europe",
+  "...": "... the same fields as in search results ...",
+  "description_truncated": false,
+  "description": "Are you ready to join our digital revolution journey?\n\n...\n\nWhat You'll Do:\n- Audit Lifecycle Ownership: ..."
+}
+```
+
+If the job has closed, the tool returns an error telling Claude to search again.
 
 ---
 
@@ -103,6 +120,10 @@ The full field-by-field analysis is in [`data_analysis/data-model.md`](data_anal
 
 **Validate at the boundary.** Tool arguments are checked by the MCP SDK against type hints before any code runs (e.g. `workplace` is a fixed set of values in the schema). Mistakes the caller can fix, like an unknown company, return a clear `ToolError` instead of an empty result, so Claude can't mistake an untracked company for one with no jobs.
 
+**Search small, read on demand.** `search_jobs` never returns descriptions (5–10k characters each would flood Claude's context with 25 jobs). Claude calls `get_job_details` only for the jobs the user asks about. Descriptions are capped at 12,000 characters, above every one measured, with a `description_truncated` flag so Claude knows if text was cut.
+
+**One description format for three ATS.** Greenhouse double-escapes its HTML, Lever splits a posting into an intro, titled lists and a closing part, and Ashby wraps each bullet in a styled paragraph. Every description goes through the same HTML-to-text cleaner, so Claude always sees paragraphs and `- ` bullets, whichever system a job came from. Each cleaning rule comes from a real case found in the data.
+
 ---
 
 ## Run it locally
@@ -124,7 +145,7 @@ Try the tools in the MCP Inspector:
 npx @modelcontextprotocol/inspector JobScouterMCP
 ```
 
-Then: **Connect → Tools → search_jobs**, fill in some arguments and run.
+Then: **Connect → Tools → search_jobs**, fill in some arguments and run. Copy an `id` from the results into **get_job_details** to read that posting.
 
 ---
 
@@ -149,7 +170,7 @@ data_analysis/
 - [x] Normalized posting date, workplace and country, with documented coverage
 - [x] Filters: query, workplace, posting date, company, location
 - [x] Structured results with partial matches
-- [ ] `get_job_details(job_id)`: full description of one job
+- [x] `get_job_details(job_id)`: full description of one job
 - [ ] Unit tests (pytest, no network)
 - [ ] Caching (download hourly instead of on every search)
 - [ ] Claude Desktop setup guide
@@ -164,3 +185,4 @@ data_analysis/
 - Each search currently re-downloads all job boards (~10 s); slow boards can be skipped for that search. Caching is next.
 - Workplace is unknown for about a third of OpenAI jobs and for every job at companies that don't publish it (see the data model).
 - The country/city lookup is intentionally small and Europe-focused; it's easy to extend.
+- Ashby has no public one-job endpoint, so `get_job_details` downloads the whole board to find one Ashby job. Caching will remove this cost.

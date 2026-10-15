@@ -114,7 +114,9 @@ def html_to_text(raw) -> str:
     text = re.sub(r"<[^>]+>", "", text)                                    # 4. drop all remaining inline or opening HTML tags that don't need dedicated line breaks
     text = html.unescape(text).replace("\xa0", " ")                        # 5. R&amp;D -> R&D, &nbsp; -> space
     lines = [" ".join(line.split()) for line in text.splitlines()]         # 6. tidy spaces on each line
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()             # 7. at most one blank line
+    text = "\n".join(lines)
+    text = re.sub(r"\n\n+- ", "\n- ", text)               # 7. no blank line before a bullet
+    return re.sub(r"\n{3,}", "\n\n", text).strip()        # 8. at most one blank line
 
 
 #************************************************************************************************

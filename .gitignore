@@ -6,3 +6,4 @@ JobScouterMCP-context.md
 *.xlsx
 try_*.py
 try/
+.pytest_cache/

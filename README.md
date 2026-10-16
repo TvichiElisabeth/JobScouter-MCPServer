@@ -1,6 +1,6 @@
 # JobScouterMCP
 
-
+[![tests](https://github.com/TvichiElisabeth/JobScouter-MCPServer/actions/workflows/tests.yml/badge.svg)](https://github.com/TvichiElisabeth/JobScouter-MCPServer/actions/workflows/tests.yml)
 
 **LinkedIn is where you find people and apply. JobScouterMCP is your research assistant: it searches the companies you care about, reads every posting, and (soon) tells you where you fit and what to learn next.**
 

@@ -171,7 +171,7 @@ data_analysis/
 - [x] Filters: query, workplace, posting date, company, location
 - [x] Structured results with partial matches
 - [x] `get_job_details(job_id)`: full description of one job
-- [ ] Unit tests (pytest, no network)
+- [x] Unit tests (pytest, no network)
 - [ ] Caching (download hourly instead of on every search)
 - [ ] Claude Desktop setup guide
 - [ ] Remote deployment (HTTP transport, Docker), install by URL

@@ -6,7 +6,7 @@
 
 <!-- TODO: demo GIF of Claude using search_jobs -->
 
-**Status:** work in progress. Search works locally over stdio; deployment, caching and CV matching are on the [roadmap](#roadmap).
+**Status:** work in progress. Search, job details and caching work locally over stdio, with unit tests running in CI. Deployment and CV matching are on the [roadmap](#roadmap).
 
 ---
 
@@ -51,9 +51,12 @@ All arguments are optional and combine with AND.
     "count": 216,
     "jobs": ["... the 10 newest jobs that don't state their workplace ..."]
   },
+  "companies_unavailable": ["Telnyx"],
   "jobs": ["... the 25 newest matches ..."]
 }
 ```
+
+`workplace_unknown` appears only when filtering by workplace; `companies_unavailable` only when a job board could not be reached and has no cached copy.
 
 Each job has the same shape, whichever hiring system it came from:
 
@@ -98,7 +101,7 @@ Jobs come only from **public job-board APIs** that companies publish through the
 | Ashby | Alchemy, Emagine, OpenAI, UiPath |
 | Lever | Aleph, Caseware, Shield AI, TSMG |
 
-About 6,937 with TSMG, about 2,560 without open jobs in total. Companies are listed in [`companies.json`](src/JobScouterMCP/companies.json); adding one is a single line.
+About 6,900 open jobs at 13 companies (TSMG alone has about 4,400). Companies are listed in [`companies.json`](src/JobScouterMCP/companies.json); adding one is a single line.
 
 ---
 
@@ -124,6 +127,10 @@ The full field-by-field analysis is in [`data_analysis/data-model.md`](data_anal
 
 **One description format for three ATS.** Greenhouse double-escapes its HTML, Lever splits a posting into an intro, titled lists and a closing part, and Ashby wraps each bullet in a styled paragraph. Every description goes through the same HTML-to-text cleaner, so Claude always sees paragraphs and `- ` bullets, whichever system a job came from. Each cleaning rule comes from a real case found in the data.
 
+**Cache for an hour, fall back when a download fails.** Job boards change slowly, so each board is downloaded at most once an hour and kept in memory. If a later download fails, the last copy is used (and a warning is logged) instead of dropping that company from the results.
+
+**"No jobs" and "couldn't check" are different answers.** A board that fails with no cached copy is listed under `companies_unavailable`, and the tool tells Claude not to claim that company has no jobs. Without this, a timeout looked exactly like a company with zero matches.
+
 ---
 
 ## Run it locally
@@ -147,16 +154,31 @@ npx @modelcontextprotocol/inspector JobScouterMCP
 
 Then: **Connect → Tools → search_jobs**, fill in some arguments and run. Copy an `id` from the results into **get_job_details** to read that posting.
 
+Run the tests (no network needed):
+
+```bash
+pytest
+```
+
+They also run on every push via GitHub Actions, on Python 3.11 and 3.12.
+
 ---
 
 ## Project structure
 
 ```
 src/JobScouterMCP/
-├── server.py        MCP tools: argument checks, downloading, logging
+├── server.py        MCP tools: argument checks, caching, logging
 ├── search.py        search logic (no network): filtering, matching, building the result
 ├── sources.py       one adapter per ATS: fetch + normalize into the shared Job shape
+├── cache.py         in-memory cache of downloaded job boards
 └── companies.json   tracked companies and their job boards
+tests/               unit tests (pytest, no network)
+  ├── test_sources.py  HTML cleaning, job ids, Lever descriptions
+  ├── test_search.py   location and title matching, filters, result shape
+  └── test_cache.py    cache expiry, tested with a fake clock
+.github/workflows/
+└── tests.yml        CI: runs the tests on every push and pull request
 data_analysis/
 ├── data-model.md                    what each ATS returns, what is stored, and why
 └── greenhouse_workplace_checks.py   reproducible coverage checks
@@ -182,9 +204,9 @@ data_analysis/
 
 ## Known limitations
 
-- Each search currently re-downloads all job boards (~10 s); slow boards can be skipped for that search. Caching is next.
 - Workplace is unknown for about a third of OpenAI jobs and for every job at companies that don't publish it (see the data model).
 - The country/city lookup is intentionally small and Europe-focused; it's easy to extend.
-- Ashby has no public one-job endpoint, so `get_job_details` downloads the whole board to find one Ashby job. Caching will remove this cost.
+- Ashby has no public one-job endpoint, so `get_job_details` downloads the whole board to find one Ashby job (the search cache stores jobs without descriptions).
 - Job boards are cached in memory for an hour, so the first search after starting the server takes ~10 s and later ones are instant. Restarting the server empties the cache.
+- TSMG's board takes about 7–9 s to download, close to the 8-second limit, so it is sometimes missing from the first search after a restart and reported under `companies_unavailable`.
 

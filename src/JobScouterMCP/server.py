@@ -51,25 +51,26 @@ async def get_company_jobs(company: dict) -> list[Job]:
     cache.put(key, jobs)
     return jobs
 
-async def get_all_jobs() -> list[Job]:
+async def get_all_jobs() -> tuple[list[Job], list[str]]:
     """Jobs from every tracked company, fetched at the same time. Each company comes
-    from the cache when possible (see get_company_jobs). Companies that fail with no
-    cached copy are skipped."""
+    from the cache when possible (see get_company_jobs). Returns (jobs, names of the
+    companies that could not be loaded and have no cached copy)."""
     results = await asyncio.gather(
-            *(get_company_jobs(c) for c in COMPANIES),
+        *(get_company_jobs(c) for c in COMPANIES),
         return_exceptions=True,
     )
     jobs: list[Job] = []
-    ok = 0
+    unavailable: list[str] = []
     for company, result in zip(COMPANIES, results):
         if isinstance(result, Exception):
             log.warning("skipping %s (%s): %r", company["name"], company["source"], result)
+            unavailable.append(company["name"])
         else:
             log.info("%s (%s): %d jobs", company["name"], company["source"], len(result))
             jobs.extend(result)
-            ok += 1
-    log.info("%d jobs from %d of %d companies", len(jobs), ok, len(COMPANIES))
-    return jobs
+    log.info("%d jobs from %d of %d companies",
+             len(jobs), len(COMPANIES) - len(unavailable), len(COMPANIES))
+    return jobs, unavailable
 
 def find_company_for_job(job_id: str) -> tuple[dict, str]:
     """Find the tracked company a job id belongs to. Returns (company entry, job number).
@@ -118,11 +119,16 @@ async def search_jobs(
          country code ("RO") or a city ("Berlin"). For remote jobs use workplace instead.
 
     How to present the result: first say how many jobs matched (total_matches).
+    If companies_unavailable is present, those companies could not be searched
+    right now (their job boards did not respond). Say so, and do not claim they
+    have no matching jobs.
     If workplace_unknown is present, mention its count and present those jobs
     separately as possible matches whose workplace isn't stated.
     Then list the jobs. If total_matches is larger than showing, say so and
     suggest narrowing the search with more filters.
     """
+    company = company.strip() if company else company   # pasted input can carry spaces or a newline
+
     if company and company.lower() not in {name.lower() for name in COMPANY_NAMES}:
       raise ToolError(
               f"Unknown company {company!r}. Tracked companies: {', '.join(COMPANY_NAMES)}"
@@ -130,9 +136,16 @@ async def search_jobs(
     
     log.info("search_jobs query=%r workplace=%r posted_within_days=%r company=%r,location=%r",
                query, workplace, posted_within_days, company, location)
-    jobs = await get_all_jobs()
+    jobs, unavailable = await get_all_jobs()
     result = search(jobs, query=query, workplace=workplace,
                       posted_within_days=posted_within_days, company=company, location=location)
+    if company:
+        # Searching one company: only that company's availability matters.
+        unavailable = [n for n in unavailable if n.lower() == company.lower()]
+    if unavailable:
+        shown = result.pop("jobs")                  # keep "jobs" as the last, longest field
+        result["companies_unavailable"] = unavailable
+        result["jobs"] = shown
     unknown = result.get("workplace_unknown", {}).get("count", "-")
     log.info("search_jobs: %d of %d jobs match, showing %d, workplace unknown: %s",
              result["total_matches"], len(jobs), result["showing"], unknown)

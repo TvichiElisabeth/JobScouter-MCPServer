@@ -98,7 +98,7 @@ Jobs come only from **public job-board APIs** that companies publish through the
 | Ashby | Alchemy, Emagine, OpenAI, UiPath |
 | Lever | Aleph, Caseware, Shield AI, TSMG |
 
-About 2,500 open jobs in total. Companies are listed in [`companies.json`](src/JobScouterMCP/companies.json); adding one is a single line.
+About 6,937 with TSMG, about 2,560 without open jobs in total. Companies are listed in [`companies.json`](src/JobScouterMCP/companies.json); adding one is a single line.
 
 ---
 
@@ -172,7 +172,7 @@ data_analysis/
 - [x] Structured results with partial matches
 - [x] `get_job_details(job_id)`: full description of one job
 - [x] Unit tests (pytest, no network)
-- [ ] Caching (download hourly instead of on every search)
+- [x] Caching (download hourly instead of on every search)
 - [ ] Claude Desktop setup guide
 - [ ] Remote deployment (HTTP transport, Docker), install by URL
 - [ ] CV matching and skill-gap report, with an evaluation on hand-labelled job/CV pairs
@@ -186,3 +186,5 @@ data_analysis/
 - Workplace is unknown for about a third of OpenAI jobs and for every job at companies that don't publish it (see the data model).
 - The country/city lookup is intentionally small and Europe-focused; it's easy to extend.
 - Ashby has no public one-job endpoint, so `get_job_details` downloads the whole board to find one Ashby job. Caching will remove this cost.
+- Job boards are cached in memory for an hour, so the first search after starting the server takes ~10 s and later ones are instant. Restarting the server empties the cache.
+

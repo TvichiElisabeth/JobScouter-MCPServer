@@ -2,11 +2,16 @@ import asyncio
 import json
 import logging
 from pathlib import Path
+
+import httpx
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+
+from JobScouterMCP.cache import BoardCache
 from JobScouterMCP.search import search
 from JobScouterMCP.sources import (Job, JobNotFound, Workplace, fetch_company,
                                    fetch_job_details, parse_job_id)
-from mcp.server.mcpserver.exceptions import ToolError
+
 log = logging.getLogger("JobScouterMCP")
 
 COMPANIES_FILE = Path(__file__).parent / "companies.json"
@@ -16,14 +21,42 @@ COMPANIES_BY_KEY = {(c["source"], c["name"].lower()): c for c in COMPANIES} # (s
 
 mcp = MCPServer("JobScouterMCP")
 
-FETCH_DEADLINE = 8  # seconds; a company slower than this is skipped for this search
+FETCH_DEADLINE = 8  # seconds; a slower board uses its last cached copy, or is skipped if it has none
 MAX_DESCRIPTION_CHARS = 12_000  # above every description measured (max 10,297); protects Claude's context
+CACHE_TTL = 60 * 60   # seconds; job boards change slowly, an hour-old copy is fine
 
-async def all_jobs() -> list[Job]:
-    """Fetch jobs from every tracked company at the same time. Boards that fail
-    or take longer than FETCH_DEADLINE seconds are skipped."""
+cache = BoardCache(ttl=CACHE_TTL)
+
+# Utils----------------------------------------------------------------
+
+async def get_company_jobs(company: dict) -> list[Job]:
+    """One company's jobs: a fresh cached copy if there is one, otherwise a new
+    download. If the download fails, fall back to the last copy, however old."""
+    key = (company["source"], company["board"])
+
+    jobs = cache.fresh(key)
+    if jobs is not None:                 # [] is a valid answer (0 jobs), so not "if jobs:"
+        return jobs
+
+    try:
+        jobs = await asyncio.wait_for(fetch_company(company), timeout=FETCH_DEADLINE)
+    except (httpx.HTTPError, TimeoutError) as e:
+        old = cache.stale(key)
+        if old is None:
+            raise                        # never downloaded: get_all_jobs skips it, as before
+        log.warning("%s (%s): download failed (%r), using the last copy",
+                    company["name"], company["source"], e)
+        return old
+
+    cache.put(key, jobs)
+    return jobs
+
+async def get_all_jobs() -> list[Job]:
+    """Jobs from every tracked company, fetched at the same time. Each company comes
+    from the cache when possible (see get_company_jobs). Companies that fail with no
+    cached copy are skipped."""
     results = await asyncio.gather(
-        *(asyncio.wait_for(fetch_company(c), timeout=FETCH_DEADLINE) for c in COMPANIES),
+            *(get_company_jobs(c) for c in COMPANIES),
         return_exceptions=True,
     )
     jobs: list[Job] = []
@@ -35,10 +68,10 @@ async def all_jobs() -> list[Job]:
             log.info("%s (%s): %d jobs", company["name"], company["source"], len(result))
             jobs.extend(result)
             ok += 1
-    log.info("fetched %d jobs from %d of %d companies", len(jobs), ok, len(COMPANIES))
+    log.info("%d jobs from %d of %d companies", len(jobs), ok, len(COMPANIES))
     return jobs
 
-def company_for_job(job_id: str) -> tuple[dict, str]:
+def find_company_for_job(job_id: str) -> tuple[dict, str]:
     """Find the tracked company a job id belongs to. Returns (company entry, job number).
     Raises ToolError for ids Claude could fix, before any download."""
     try:
@@ -91,13 +124,13 @@ async def search_jobs(
     suggest narrowing the search with more filters.
     """
     if company and company.lower() not in {name.lower() for name in COMPANY_NAMES}:
-          raise ToolError(
+      raise ToolError(
               f"Unknown company {company!r}. Tracked companies: {', '.join(COMPANY_NAMES)}"
           )
     
     log.info("search_jobs query=%r workplace=%r posted_within_days=%r company=%r,location=%r",
                query, workplace, posted_within_days, company, location)
-    jobs = await all_jobs()
+    jobs = await get_all_jobs()
     result = search(jobs, query=query, workplace=workplace,
                       posted_within_days=posted_within_days, company=company, location=location)
     unknown = result.get("workplace_unknown", {}).get("count", "-")
@@ -123,7 +156,7 @@ async def get_job_details(job_id: str) -> dict:
     for the full posting.
     """
     log.info("get_job_details job_id=%r", job_id)
-    company, raw_id = company_for_job(job_id)
+    company, raw_id = find_company_for_job(job_id)
     try:
         job = await fetch_job_details(company, raw_id)
     except JobNotFound as e:
